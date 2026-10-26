@@ -2237,5 +2237,44 @@ var secIO = new IntersectionObserver(function(entries){
   }
 })();
 </script>
+
+<!-- SMOOTH SCROLL FIX (2026-10-26): one consistent entrance, no glitch sources.
+  Before this, reveals used several competing systems at once: blur+scale+rotate
+  entrances with different delays, a scroll sweep that force-revealed everything
+  above a line, an off-screen governor that froze animations (then restarted
+  them with a jump), two scroll loops fighting over project images (one writing
+  translate -16px, the other translate -26px + scale + velocity skew), and a
+  hero-letter observer that re-played the headline every time it crossed 60%.
+  This override makes every scroll entrance the same smooth 24px fade-slide,
+  with no blur, no rotate, no skew and no freeze, in either scroll direction. -->
+<style>
+.reveal, .proj{transition:opacity .65s ease,transform .65s ease !important;transition-delay:0s !important;will-change:transform,opacity}
+.reveal.pre, .proj.will-anim{opacity:0 !important;transform:translateY(24px) !important;filter:none !important}
+.reveal.in, .proj.anim-in{opacity:1 !important;transform:none !important;filter:none !important}
+.anim-off, .anim-off *{animation-play-state:running !important}
+.proj-media img{animation:none !important}
+.hero h1 .ch{animation:none !important}
+.fx-pop{animation:none !important;opacity:1 !important;transform:none !important}
+</style>
+<script>
+/* SMOOTH SCROLL FIX: neutralise the project-image scroll loops that fought
+   each other (translate + scale + velocity skew on every scroll frame).
+   This script registers last, so its rAF runs after theirs and leaves the
+   images still and smooth instead of jittering. */
+(function(){
+  var imgs = document.querySelectorAll('.proj-media img');
+  if (!imgs.length) return;
+  var queued = false;
+  function settle(){
+    queued = false;
+    imgs.forEach(function(img){ img.style.transform = ''; img.style.translate = '0 0'; });
+  }
+  addEventListener('scroll', function(){
+    if (queued) return; queued = true; requestAnimationFrame(settle);
+  }, { passive: true });
+  settle();
+})();
+</script>
 </body>
+
 </html>
