@@ -655,7 +655,7 @@ section[id]{scroll-margin-top:96px}
 }
 /* ===== PROMINENT MOTION LAYER ===== */
 /* work cards: JS sets .will-anim, observer adds .anim-in (staggered) */
-.proj.will-anim{opacity:0;transform:translateY(52px) scale(.96)}
+.proj.will-anim{opacity:0;transform:translateY(48px) scale(.92)}
 .proj.anim-in{opacity:1;transform:none;transition:opacity .85s ease,transform .85s cubic-bezier(.2,.7,.2,1);transition-delay:var(--ad,0s)}
 .proj.anim-in:hover{transform:translateY(-6px)}
 /* continuous, always-visible motion */
@@ -1053,9 +1053,20 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
 .dash.reveal.pre,
 .lab.reveal.pre,
 .contact-card.reveal.pre{transform:translateY(26px) scale(.94)!important}
-/* project cards (incl. NEXUS + Octo AI): same pop, stagger via --ad kept */
-.proj.will-anim{opacity:0;transform:translateY(28px) scale(.94)!important;will-change:opacity,transform}
+/* project cards (incl. NEXUS + Octo AI): same pop, stagger via --ad kept.
+   Pop reads clearly on the tall cards: 48px rise + .92 start scale, so the
+   spring overshoot is visible instead of a slow fade.
+   :not(.anim-in) on the start state is load-bearing: .will-anim and
+   .anim-in have equal specificity and both use !important, so without it
+   the later start-state rule (mobile media query) would pin the card at
+   40px/.93 forever even after it popped (opacity reached 1, transform
+   never settled). */
+.proj.will-anim:not(.anim-in){opacity:0;transform:translateY(48px) scale(.92)!important;will-change:opacity,transform}
 .proj.anim-in{opacity:1!important;transform:none!important;transition:opacity var(--rv-dur) var(--rv-fade),transform var(--rv-dur) var(--rv-pop),box-shadow .35s ease!important;transition-delay:var(--ad,0s)!important}
+/* hover lift stays snappy: the entrance transition (.95s + stagger delay)
+   would otherwise make the lift lag up to .36s and crawl. Entrance itself
+   is unaffected — this rule only applies while hovering. */
+.proj.anim-in:hover{transition:transform .3s ease,box-shadow .35s ease!important;transition-delay:0s!important}
 /* timeline entries: fade pop with the existing stagger delays */
 .timeline .tl{transition:opacity .85s var(--rv-fade),transform .95s var(--rv-pop)}
 .timeline.pre .tl{opacity:0;transform:translateY(18px) scale(.96)}
@@ -1073,7 +1084,7 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
   .about-grid .about-copy.reveal.pre,
   #journey .timeline.reveal.pre,
   .dash.reveal.pre,.lab.reveal.pre,.contact-card.reveal.pre{transform:translateY(22px) scale(.95)!important}
-  .proj.will-anim{transform:translateY(24px) scale(.95)!important}
+  .proj.will-anim:not(.anim-in){transform:translateY(40px) scale(.93)!important}
 }
 @media (prefers-reduced-motion: reduce){
   .fx-pop,.reveal.in .b-ic,.reveal.in .svc .ic{animation:none!important}
@@ -2159,10 +2170,15 @@ var secIO = new IntersectionObserver(function(entries){
   if (!reducedM && 'IntersectionObserver' in window) {
     /* apply the hidden start-state only now that an observer is about to run */
     document.querySelectorAll('.reveal:not(.in)').forEach(function(el){ el.classList.add('pre'); });
-    cards.forEach(function(c, i){ c.classList.add('will-anim'); c.style.setProperty('--ad', (i % 3) * 0.12 + 's'); });
+    cards.forEach(function(c, i){ c.classList.add('will-anim'); c.style.setProperty('--ad', (i % 3) * 0.18 + 's'); });
+    /* project cards pop only once a good chunk of the card is on screen:
+       rootMargin -20% fires when the card top crosses 80% of the viewport,
+       so the .95s pop plays while the user is actually looking at the card.
+       The old threshold .08 fired at ~8% visible — the pop finished below
+       the fold and the card just "appeared". */
     var ioP = new IntersectionObserver(function(entries){
       entries.forEach(function(en){ if (en.isIntersecting) { en.target.classList.add('anim-in'); ioP.unobserve(en.target); } });
-    }, { threshold: .08, rootMargin: '0px 0px -20px 0px' });
+    }, { threshold: 0, rootMargin: '0px 0px -20% 0px' });
     cards.forEach(function(c){ ioP.observe(c); });
     var ioR = new IntersectionObserver(function(entries){
       entries.forEach(function(en){ if (en.isIntersecting) { revealEl(en.target); ioR.unobserve(en.target); } });
@@ -2173,8 +2189,12 @@ var secIO = new IntersectionObserver(function(entries){
      even on fast jumps / anchor navigation that outrun the observers */
   function sweep(){
     var line = innerHeight * .96;
+    /* project cards use their own, lower line (82% of viewport) so the
+       sweep cannot pre-empt the later observer trigger and start the pop
+       while the card is still below the fold. */
+    var projLine = innerHeight * .82;
     document.querySelectorAll('.reveal.pre').forEach(function(el){ if (el.getBoundingClientRect().top < line) revealEl(el); });
-    document.querySelectorAll('.proj.will-anim:not(.anim-in)').forEach(function(el){ if (el.getBoundingClientRect().top < line) el.classList.add('anim-in'); });
+    document.querySelectorAll('.proj.will-anim:not(.anim-in)').forEach(function(el){ if (el.getBoundingClientRect().top < projLine) el.classList.add('anim-in'); });
   }
   var sweepQueued = false;
   addEventListener('scroll', function(){
@@ -2300,6 +2320,17 @@ var secIO = new IntersectionObserver(function(entries){
         }
       });
       if (!remaining) clearInterval(popGuard);
+    }, 1500);
+    /* project cards: same repeating safety — if the observer misses a card
+       (fast jump / anchor nav), pop it once it is on screen, so a project
+       card can never sit dim/invisible. Clears itself once all have popped. */
+    var projGuard = setInterval(function(){
+      var remaining = 0;
+      document.querySelectorAll('.proj.will-anim:not(.anim-in)').forEach(function(el){
+        if (el.getBoundingClientRect().top < innerHeight) el.classList.add('anim-in');
+        else remaining++;
+      });
+      if (!remaining) clearInterval(projGuard);
     }, 1500);
   }
   /* rAF scroll loop: hero parallax + watermark drift + image parallax.
