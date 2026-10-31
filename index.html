@@ -787,6 +787,11 @@ body::before{opacity:.95}
 .proj:hover .proj-media img{animation-play-state:paused;transform:scale(1.08)}
 /* off-screen sections: JS adds .anim-off to pause every animation inside */
 .anim-off,.anim-off *{animation-play-state:paused!important}
+/* One-shot entrance animations are exempt from the pause: pausing them
+   mid-flight froze cards/pills/icons dim or invisible if the user scrolled
+   fast (the governor's own rule is that content visibility must never
+   depend on it). Ambient/infinite animations still pause. */
+.anim-off .fx-pop,.anim-off .reveal.in .b-ic,.anim-off .reveal.in .svc .ic{animation-play-state:running!important}
 /* progress + cursor now move by transform (compositor) instead of width/left/top */
 #progress{width:100%;transform:scaleX(0);transform-origin:0 50%}
 #cDot,#cRing{left:0;top:0}
@@ -1073,6 +1078,21 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
 @media (prefers-reduced-motion: reduce){
   .fx-pop,.reveal.in .b-ic,.reveal.in .svc .ic{animation:none!important}
 }
+/* ===== HOVER-LIFT REPAIR (motion audit) =====
+   Entrance states override hover transforms: .reveal.in forces
+   transform:none!important and fx-pop's fill mode holds transform:none,
+   so the hover lift on certs, services, points, pills, bento cards and
+   the contact badge was dead. These rules follow the existing
+   .proj.anim-in:hover precedent (!important beats both). */
+.cert.reveal.in:hover{transform:translateY(-5px)!important}
+.svc.reveal.in:hover{transform:translateY(-5px)!important}
+.point.fx-pop:hover{transform:translateY(-4px)!important}
+.pill.fx-pop:hover{transform:translateY(-2px)!important}
+.bcard.fx-pop:hover{transform:translateY(-4px)!important}
+.bcard.fx-pop:active{transform:scale(.99)!important}
+.contact-badge.reveal.in{transition:transform .25s,border-color .25s!important}
+.contact-badge.reveal.in:hover{transform:scale(1.05)!important}
+.contact-badge.reveal.in:active{transform:scale(.96)!important}
 </style>
 </head>
 <body>
@@ -1395,7 +1415,7 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
   <!-- CONTACT -->
   <section id="contact" style="padding-top:20px">
     <div class="wrap">
-      <a class="contact-badge" href="https://www.linkedin.com/in/sharjeel-sarwar-a18414327" target="_blank" rel="noopener" aria-label="Connect with Sharjeel on LinkedIn">
+      <a class="contact-badge reveal" href="https://www.linkedin.com/in/sharjeel-sarwar-a18414327" target="_blank" rel="noopener" aria-label="Connect with Sharjeel on LinkedIn">
         <svg viewBox="0 0 120 120" aria-hidden="true"><defs><path id="circPathC" d="M60,60 m-46,0 a46,46 0 1,1 92,0 a46,46 0 1,1 -92,0"/></defs><text><textPath href="#circPathC">LET'S BUILD • GENAI • RAG • AGENTIC AI • </textPath></text></svg>
         <span class="cb-arrow" aria-hidden="true">↗</span>
       </a>
@@ -1413,7 +1433,7 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
 </main>
 
 <footer>
-  <div class="wrap foot">
+  <div class="wrap foot reveal">
     <p>© 2026 Sharjeel Sarwar — BSCS @ UET Lahore · Gojra, Punjab, Pakistan.</p>
     <div class="socials">
       <a href="https://www.linkedin.com/in/sharjeel-sarwar-a18414327" target="_blank" rel="noopener">LinkedIn ↗</a>
@@ -2253,7 +2273,7 @@ var secIO = new IntersectionObserver(function(entries){
     el.style.setProperty('--i', i % 6);
   });
   /* staggered pop for elements that are not .reveal themselves */
-  var popTargets = document.querySelectorAll('.about-points .point, .dash-tiles .dtile, .pills .pill');
+  var popTargets = document.querySelectorAll('.about-points .point, .dash-tiles .dtile, .pills .pill, .bento .bcard');
   if ('IntersectionObserver' in window) {
     popTargets.forEach(function(el){ el.style.opacity='0'; });
     var ioPop = new IntersectionObserver(function(entries){
@@ -2267,8 +2287,20 @@ var secIO = new IntersectionObserver(function(entries){
       });
     }, { threshold:.12, rootMargin:'0px 0px -20px 0px' });
     popTargets.forEach(function(el){ ioPop.observe(el); });
-    /* safety: never leave a pop target hidden if observer stalls */
-    setTimeout(function(){ popTargets.forEach(function(el){ if(el.style.opacity==='0' && el.getBoundingClientRect().top < innerHeight) { el.style.opacity=''; el.classList.add('fx-pop'); } }); }, 3000);
+    /* safety: never leave a pop target hidden if the observer misses it
+       (fast smooth scrolling can sweep a small card through the viewport
+       between observer deliveries). Re-checked on an interval until every
+       target has popped, so a missed element still ends fully opaque. */
+    var popGuard = setInterval(function(){
+      var remaining = 0;
+      popTargets.forEach(function(el){
+        if (el.style.opacity === '0') {
+          if (el.getBoundingClientRect().top < innerHeight) { el.style.opacity=''; el.classList.add('fx-pop'); }
+          else remaining++;
+        }
+      });
+      if (!remaining) clearInterval(popGuard);
+    }, 1500);
   }
   /* rAF scroll loop: hero parallax + watermark drift + image parallax.
      Glitch fix: this is now the ONLY writer of project-image position, and
