@@ -122,6 +122,14 @@ header{position:fixed;inset:0 0 auto 0;z-index:100;backdrop-filter:var(--glass-b
 .btn-ghost:hover{border-color:var(--lime);color:var(--lime)}
 .btn{transition:transform .2s,border-color .2s,color .2s}
 .hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:56px;max-width:1060px}
+/* stat cards + scroll hint must sit ABOVE .hero-shade: the shade is a
+   dark gradient (transparent 40% -> solid bg 98%) at z-index 1, and these
+   two are its only children without a z-index — it used to paint over
+   them, leaving the cards at ~a third brightness and the hint nearly
+   invisible on mobile, where the hero is tall and the cards sit deep in
+   the fade zone. Lifting them to z-index 2 (same as .hero-inner) keeps
+   them fully bright; the shade still fades the backdrop behind them. */
+.hero-stats,.scroll-hint{position:relative;z-index:2}
 .stat.hack{border-color:color-mix(in srgb,var(--lime) 55%,transparent);background:linear-gradient(150deg,color-mix(in srgb,var(--lime) 16%,transparent),var(--glass-bg-strong))}
 .stat.hack b{color:var(--lime)}
 .stat{border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 82%,transparent);border-radius:16px;padding:18px}
@@ -867,8 +875,14 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--lime) 55%,tran
 /* mobile: glass blur, hero chip and dash float come back */
 @media(max-width:820px){
   .edu,.svc,.skill,.point,.pill,.chip,.dtile,.filters button,.lab-models button{backdrop-filter:blur(10px) saturate(145%);-webkit-backdrop-filter:blur(10px) saturate(145%)}
-  .dash-float.f1{display:flex;scale:.85;transform-origin:top right;top:-16px;right:10px}
+  /* mobile: the floating Top Performer badge must not sit on top of the
+     console header — it used to overlap the title + BUILD LOG badge.
+     It now flows in as a chip under the grid instead of floating over
+     the header, and the header row wraps cleanly on narrow screens. */
+  .dash-float.f1{display:flex;position:static;scale:1;margin:16px 0 0;max-width:100%}
   .dash-float.f2{display:none}
+  .dash-head{flex-wrap:wrap;row-gap:8px}
+  .dash-head .lab-badge{margin-left:0}
 }
 @media(max-width:900px){
   .chip.mob{display:block;top:118px!important;right:12px!important;z-index:3}
@@ -2263,10 +2277,26 @@ var secIO = new IntersectionObserver(function(entries){
   function upd(){
     queued = false;
     var y = window.scrollY || 0;
-    /* hero: drift up at 0.35x + gentle fade after 40% of hero height */
-    if (hero && y < hero.offsetHeight * 1.2) {
+    /* hero: drift up + gentle fade ONLY as the hero actually leaves the
+       viewport. Old code faded on raw scrollY, so on tall mobile heroes
+       the stat cards + scroll hint were already at ~0.3 opacity while
+       still fully in view (the fade floor is 0.25). The fade is now
+       driven by the hero's bottom edge: nothing fades until that edge is
+       320px above the viewport bottom, i.e. the stats have already
+       scrolled off-screen. */
+    if (hero) {
       heroInner.style.setProperty('--hero-y', (y * -.18).toFixed(1) + 'px');
-      heroInner.style.setProperty('--hero-o', Math.max(.25, 1 - y / (hero.offsetHeight * 1.4)).toFixed(2));
+      var hRect = hero.getBoundingClientRect();
+      var fadeP = Math.max(0, (320 - hRect.bottom) / (hero.offsetHeight * 0.5));
+      var heroO = Math.max(.25, 1 - fadeP);
+      /* safety net: while the stat cards are anywhere in the viewport,
+         the hero is never dimmed — a card can never stay stuck dim. */
+      var hs = document.querySelector('.hero-stats');
+      if (hs) {
+        var hsRect = hs.getBoundingClientRect();
+        if (hsRect.bottom > 0 && hsRect.top < innerHeight) heroO = 1;
+      }
+      heroInner.style.setProperty('--hero-o', heroO.toFixed(2));
     }
     /* watermarks drift slower than page = parallax depth */
     wmSections.forEach(function(s){
