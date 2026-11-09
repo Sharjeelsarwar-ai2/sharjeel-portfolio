@@ -1089,6 +1089,20 @@ section[data-wm]::before{transform:translateY(var(--wm-y,0px));will-change:trans
 @media (prefers-reduced-motion: reduce){
   .fx-pop,.reveal.in .b-ic,.reveal.in .svc .ic{animation:none!important}
 }
+/* ===== ABOUT — late, strong fade pop (same treatment as project cards) =====
+   About sits right below the hero, so the generic reveal (4% visible +
+   96% sweep line + 2.6s fallback) finished its pop before the user ever
+   scrolled down to look at it. About now gets the cards' treatment: a
+   dedicated late observer (see MOTION LAYER) and the same strong start
+   state — 48px rise + .92 scale — so the pop is unmistakable at first
+   glance. Scoped to #about only; every other section keeps the unified
+   reveal, and the four .point cards get the same strong pop. */
+#about .reveal.pre{transform:translateY(48px) scale(.92)!important}
+#about .point.fx-pop{animation:fxPopAbout var(--rv-dur) var(--rv-pop) both;animation-delay:var(--fd,0s)}
+@keyframes fxPopAbout{from{opacity:0;transform:translateY(48px) scale(.92)}to{opacity:1;transform:none}}
+@media(max-width:700px){
+  #about .reveal.pre{transform:translateY(40px) scale(.93)!important}
+}
 /* ===== HOVER-LIFT REPAIR (motion audit) =====
    Entrance states override hover transforms: .reveal.in forces
    transform:none!important and fx-pop's fill mode holds transform:none,
@@ -2187,10 +2201,19 @@ var secIO = new IntersectionObserver(function(entries){
       entries.forEach(function(en){ if (en.isIntersecting) { en.target.classList.add('anim-in'); ioP.unobserve(en.target); } });
     }, { threshold: 0, rootMargin: '0px 0px -20% 0px' });
     cards.forEach(function(c){ ioP.observe(c); });
+    /* About reveals (id-card + copy) get the project cards' late trigger:
+       rootMargin -20% fires when the top crosses 80% of the viewport, so
+       the .95s pop plays while the user is actually looking at About.
+       The generic observer fired at 4% visible and the 2.6s fallback
+       (1.15x viewport) finished the pop below the fold. */
+    var ioA = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if (en.isIntersecting) { revealEl(en.target); ioA.unobserve(en.target); } });
+    }, { threshold: 0, rootMargin: '0px 0px -20% 0px' });
+    document.querySelectorAll('#about .reveal.pre').forEach(function(el){ ioA.observe(el); });
     var ioR = new IntersectionObserver(function(entries){
       entries.forEach(function(en){ if (en.isIntersecting) { revealEl(en.target); ioR.unobserve(en.target); } });
     }, { threshold: .04, rootMargin: '0px 0px 40px 0px' });
-    document.querySelectorAll('.reveal.pre').forEach(function(el){ ioR.observe(el); });
+    document.querySelectorAll('.reveal.pre').forEach(function(el){ if (!el.closest('#about')) ioR.observe(el); });
   }
   /* scroll sweep: anything at or above the reveal line gets its visible state,
      even on fast jumps / anchor navigation that outrun the observers */
@@ -2200,7 +2223,13 @@ var secIO = new IntersectionObserver(function(entries){
        sweep cannot pre-empt the later observer trigger and start the pop
        while the card is still below the fold. */
     var projLine = innerHeight * .82;
-    document.querySelectorAll('.reveal.pre').forEach(function(el){ if (el.getBoundingClientRect().top < line) revealEl(el); });
+    document.querySelectorAll('.reveal.pre').forEach(function(el){
+      /* About reveals use the same 82% line as the project cards — About
+         sits just below the hero, so the 96% line finished its pop
+         before it was ever looked at. */
+      var elLine = el.closest('#about') ? projLine : line;
+      if (el.getBoundingClientRect().top < elLine) revealEl(el);
+    });
     document.querySelectorAll('.proj.will-anim:not(.anim-in)').forEach(function(el){ if (el.getBoundingClientRect().top < projLine) el.classList.add('anim-in'); });
   }
   var sweepQueued = false;
@@ -2217,7 +2246,10 @@ var secIO = new IntersectionObserver(function(entries){
   setTimeout(sweep, 1200);
   setTimeout(function(){
     document.querySelectorAll('.reveal.pre').forEach(function(el){
-      if (el.getBoundingClientRect().top < innerHeight * 1.15) revealEl(el);
+      /* About keeps the 82% line here too — the 1.15x line would reveal
+         it ~2.6s after load while it is still below the fold. */
+      var elLine = el.closest('#about') ? innerHeight * .82 : innerHeight * 1.15;
+      if (el.getBoundingClientRect().top < elLine) revealEl(el);
     });
   }, 2600);
 })();
@@ -2307,6 +2339,11 @@ var secIO = new IntersectionObserver(function(entries){
       entries.forEach(function(en){
         if (!en.isIntersecting) return;
         var el = en.target;
+        /* About points: don't waste the pop inside a still-hidden parent.
+           If the about-copy hasn't revealed yet, wait — the observer
+           fires again when the parent's transform settles on reveal. */
+        var aboutCopy = el.closest('#about .about-copy');
+        if (aboutCopy && aboutCopy.classList.contains('pre')) return;
         var idx = Array.prototype.indexOf.call(el.parentElement ? el.parentElement.children : [], el);
         el.style.setProperty('--fd', ((idx % 6) * .09) + 's');
         el.style.opacity=''; el.classList.add('fx-pop');
@@ -2322,7 +2359,12 @@ var secIO = new IntersectionObserver(function(entries){
       var remaining = 0;
       popTargets.forEach(function(el){
         if (el.style.opacity === '0') {
-          if (el.getBoundingClientRect().top < innerHeight) { el.style.opacity=''; el.classList.add('fx-pop'); }
+          /* About points wait for the about-copy to reveal, and use the
+             same 82% line as the copy so the pop can't start below the fold. */
+          var aboutCopy = el.closest('#about .about-copy');
+          if (aboutCopy && aboutCopy.classList.contains('pre')) { remaining++; return; }
+          var popLine = aboutCopy ? innerHeight * .82 : innerHeight;
+          if (el.getBoundingClientRect().top < popLine) { el.style.opacity=''; el.classList.add('fx-pop'); }
           else remaining++;
         }
       });
